@@ -40,7 +40,7 @@ require (
 	github.com/mattn/go-isatty v0.0.14
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/oklog/ulid/v2 v2.0.2
-	github.com/open-policy-agent/opa v0.32.0
+	github.com/open-policy-agent/opa v0.32.1
 	github.com/ory/dockertest/v3 v3.7.0
 	github.com/planetscale/vtprotobuf v0.0.0-20210616093554-9236f7c7b8ca
 	github.com/prometheus/client_golang v1.11.0
@@ -72,7 +72,6 @@ require (
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v2 v2.4.0
 	helm.sh/helm/v3 v3.7.0
-	modernc.org/sqlite v1.13.0
 )
 
 require (
@@ -125,11 +124,11 @@ require (
 	github.com/jackc/pgtype v1.8.1 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jwalton/go-supportscolor v1.0.0 // indirect
-	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/lib/pq v1.10.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/magefile/mage v1.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
+	github.com/mattn/go-sqlite3 v1.14.8 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mholt/archiver/v3 v3.5.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
@@ -144,7 +143,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.29.0 // indirect
-	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect
@@ -161,7 +159,6 @@ require (
 	github.com/yashtewari/glob-intersection v0.0.0-20180916065949-5c77d914dd0b // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
-	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/sys v0.0.0-20210902050250-f475640dd07b // indirect
 	golang.org/x/term v0.0.0-20210220032956-6a3ed077a48d // indirect
 	golang.org/x/text v0.3.7 // indirect
@@ -169,15 +166,6 @@ require (
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
-	lukechampine.com/uint128 v1.1.1 // indirect
-	modernc.org/cc/v3 v3.34.0 // indirect
-	modernc.org/ccgo/v3 v3.11.2 // indirect
-	modernc.org/libc v1.11.3 // indirect
-	modernc.org/mathutil v1.4.1 // indirect
-	modernc.org/memory v1.0.5 // indirect
-	modernc.org/opt v0.1.1 // indirect
-	modernc.org/strutil v1.1.1 // indirect
-	modernc.org/token v1.0.0 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
