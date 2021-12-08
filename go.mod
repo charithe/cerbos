@@ -70,7 +70,7 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go v1.42.19
+	github.com/aws/aws-sdk-go v1.42.20
 	github.com/lestrrat-go/jwx v1.2.13
 	github.com/minio/minio-go/v7 v7.0.16
 	go.opentelemetry.io/otel v1.2.0
