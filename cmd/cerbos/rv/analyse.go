@@ -146,37 +146,40 @@ func (a *analyser) initRoleInfo(r string) {
 
 func condToStr(cond *runtimev1.Condition) string {
 	sb := new(strings.Builder)
-	doCondToStr(sb, cond, 0)
+	doCondToStr(sb, cond)
 	return sb.String()
 }
 
-func doCondToStr(sb *strings.Builder, cond *runtimev1.Condition, indent int) {
+func doCondToStr(sb *strings.Builder, cond *runtimev1.Condition) {
 	if cond == nil {
 		return
 	}
 
-	sb.WriteString(strings.Repeat(" ", indent))
 	switch t := cond.Op.(type) {
 	case *runtimev1.Condition_Expr:
 		sb.WriteString(t.Expr.GetOriginal())
 	case *runtimev1.Condition_All:
-		sb.WriteString("allOf:")
-		for _, expr := range t.All.GetExpr() {
-			doCondToStr(sb, expr, indent+1)
-		}
+		condListToStr(sb, "allOf", t.All.Expr)
 	case *runtimev1.Condition_Any:
-		sb.WriteString("anyOf:")
-		for _, expr := range t.Any.GetExpr() {
-			doCondToStr(sb, expr, indent+1)
-		}
+		condListToStr(sb, "anyOf", t.Any.Expr)
 	case *runtimev1.Condition_None:
-		sb.WriteString("noneOf:")
-		for _, expr := range t.None.GetExpr() {
-			doCondToStr(sb, expr, indent+1)
-		}
+		condListToStr(sb, "noneOf", t.None.Expr)
 	default:
 		panic(fmt.Errorf("unhandled condition type %T", t))
 	}
+}
 
-	sb.WriteString("\n")
+func condListToStr(sb *strings.Builder, op string, exprs []*runtimev1.Condition) {
+	sb.WriteString(" ")
+	sb.WriteString(op)
+	sb.WriteString("(")
+
+	n := len(exprs) - 1
+	for i, expr := range exprs {
+		doCondToStr(sb, expr)
+		if i < n {
+			sb.WriteString(", ")
+		}
+	}
+	sb.WriteString(") ")
 }

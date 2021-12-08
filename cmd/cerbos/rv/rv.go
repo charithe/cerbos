@@ -17,7 +17,6 @@ import (
 
 	"github.com/cerbos/cerbos/internal/compile"
 	"github.com/cerbos/cerbos/internal/storage/index"
-	"github.com/cerbos/cerbos/internal/verify"
 )
 
 var (
@@ -78,7 +77,7 @@ func doRun(cmd *cobra.Command, args []string) error {
 		displayCompileErrors(cmd, *compErr)
 	}
 
-	outputJSON(cmd, res)
+	displayResult(cmd, res)
 
 	return nil
 }
@@ -150,50 +149,47 @@ func displayCompileErrors(cmd *cobra.Command, errs compile.ErrorList) error {
 	return ErrFailed
 }
 
-func displayVerificationResult(cmd *cobra.Command, result *verify.Result) error {
+func displayResult(cmd *cobra.Command, result map[string]*RoleInfo) error {
 	switch strings.ToLower(format) {
 	case formatJSON:
-		if err := outputJSON(cmd, result); err != nil {
-			return err
-		}
-
-		if result.Failed {
-			return ErrFailed
-		}
-
-		return nil
+		return outputJSON(cmd, result)
 	case formatPlain:
 		color.NoColor = true
 	}
 
-	cmd.Println(header("Test results"))
-	for _, sr := range result.Results {
-		cmd.Printf("= %s %s ", testName(sr.Suite), fileName("(", sr.File, ")"))
-		if sr.Skipped {
-			cmd.Println(skippedTest("[SKIPPED]"))
-			continue
-		}
-
+	cmd.Println(header("Role Capabilities"))
+	for role, roleInfo := range result {
+		cmd.Printf("role=%s", role)
 		cmd.Println()
-		for _, tr := range sr.Tests {
-			cmd.Printf("== %s ", testName(tr.Name.String()))
-			if tr.Skipped {
-				cmd.Println(skippedTest("[SKIPPED]"))
-				continue
-			}
 
-			if tr.Failed {
-				cmd.Println(failedTest("[FAILED]"))
-				cmd.Printf("\tError: %s\n", tr.Error)
-				continue
-			}
+		for resource, resInfo := range roleInfo.ResourceActions {
+			for version, actions := range resInfo.VersionActions {
+				cmd.Printf("\tresource=%s (%s)", resource, version)
+				cmd.Println()
 
-			cmd.Println(successfulTest("[OK]"))
+				for action, actionInfo := range actions {
+					cmd.Printf("\t\taction=%s", action)
+					if actionInfo.DerivedRole != "" {
+						cmd.Printf(" (through derived role %q)", actionInfo.DerivedRole)
+						cmd.Println()
+					}
+					cmd.Println()
+
+					if actionInfo.DerivedRoleCond != "" {
+						cmd.Printf("\t\t\tDerived role condition=%s", actionInfo.DerivedRoleCond)
+						cmd.Println()
+					}
+
+					if actionInfo.PolicyCond != "" {
+						cmd.Printf("\t\t\tPolicy condition=%s", actionInfo.PolicyCond)
+						cmd.Println()
+					}
+					cmd.Println()
+				}
+				cmd.Println()
+			}
+			cmd.Println()
 		}
-	}
-
-	if result.Failed {
-		return ErrFailed
 	}
 
 	return nil
