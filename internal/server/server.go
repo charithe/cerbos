@@ -16,7 +16,10 @@ import (
 	"time"
 
 	"contrib.go.opencensus.io/exporter/prometheus"
+	"github.com/fullstorydev/grpchan"
+	"github.com/fullstorydev/grpchan/inprocgrpc"
 	"github.com/gorilla/mux"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
@@ -168,11 +171,11 @@ type Param struct {
 	ZPagesEnabled bool
 }
 
-type grpcSrvs struct {
-	cerbos     svcv1.CerbosServiceServer
-	playground svcv1.CerbosPlaygroundServiceServer
-	admin      svcv1.CerbosAdminServiceServer
-	server     *grpc.Server
+type httpParam struct {
+	listener   net.Listener
+	grpcServer *grpc.Server
+	inprocGRPC *inprocgrpc.Channel
+	zpages     bool
 }
 
 type Server struct {
@@ -221,13 +224,18 @@ func (s *Server) Start(ctx context.Context, param Param) error {
 	}
 
 	// start servers
-	gs, err := s.startGRPCServer(grpcL, param)
+	grpcServer, inprocGRPC, err := s.startGRPCServer(grpcL, param)
 	if err != nil {
 		log.Error("Failed to start GRPC server", zap.Error(err))
 		return err
 	}
 
-	httpServer, err := s.startHTTPServer(ctx, httpL, gs, param.ZPagesEnabled)
+	httpServer, err := s.startHTTPServer(ctx, httpParam{
+		listener:   httpL,
+		grpcServer: grpcServer,
+		inprocGRPC: inprocGRPC,
+		zpages:     param.ZPagesEnabled,
+	})
 	if err != nil {
 		log.Error("Failed to start HTTP server", zap.Error(err))
 		return err
@@ -241,7 +249,7 @@ func (s *Server) Start(ctx context.Context, param Param) error {
 		s.health.Shutdown()
 
 		log.Debug("Shutting down gRPC server")
-		gs.server.GracefulStop()
+		grpcServer.GracefulStop()
 
 		log.Debug("Shutting down HTTP server")
 		shutdownCtx, cancelFunc := context.WithTimeout(context.Background(), defaultTimeout)
@@ -324,21 +332,60 @@ func (s *Server) getTLSConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func (s *Server) startGRPCServer(l net.Listener, param Param) (*grpcSrvs, error) {
+func (s *Server) startGRPCServer(l net.Listener, param Param) (*grpc.Server, *inprocgrpc.Channel, error) {
 	log := zap.L().Named("grpc")
-	gs := &grpcSrvs{
-		server: s.mkGRPCServer(log, param.AuditLog),
+
+	hm, err := s.registerServices(log, param)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	healthpb.RegisterHealthServer(gs.server, s.health)
-	reflection.Register(gs.server)
+	streamInterceptor := s.createStreamInterceptors(log, param.AuditLog)
+	unaryInterceptor := s.createUnaryInterceptors(log, param.AuditLog)
 
-	gs.cerbos = svc.NewCerbosService(param.Engine, param.AuxData)
-	svcv1.RegisterCerbosServiceServer(gs.server, gs.cerbos)
-	s.health.SetServingStatus(svcv1.CerbosService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+	server := s.mkGRPCServer(streamInterceptor, unaryInterceptor)
+	inprocChan := &inprocgrpc.Channel{}
+	inprocChan = inprocChan.WithServerStreamInterceptor(streamInterceptor).WithServerUnaryInterceptor(unaryInterceptor)
+
+	hm.ForEach(func(desc *grpc.ServiceDesc, h interface{}) {
+		server.RegisterService(desc, h)
+		inprocChan.RegisterService(desc, h)
+		s.health.SetServingStatus(desc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+	})
+
+	healthpb.RegisterHealthServer(server, s.health)
+	reflection.Register(server)
+
+	s.group.Go(func() error {
+		log.Info(fmt.Sprintf("Starting gRPC server at %s", s.conf.GRPCListenAddr))
+
+		cleanup, err := admin.Register(server)
+		if err != nil {
+			log.Error("Failed to register gRPC admin interfaces", zap.Error(err))
+			return err
+		}
+		defer cleanup()
+
+		if err := server.Serve(l); err != nil {
+			log.Error("gRPC server failed", zap.Error(err))
+			return err
+		}
+
+		log.Info("gRPC server stopped")
+		return nil
+	})
+
+	return server, inprocChan, nil
+}
+
+func (s *Server) registerServices(log *zap.Logger, param Param) (grpchan.HandlerMap, error) {
+	hm := grpchan.HandlerMap{}
+
+	cerbosSvc := svc.NewCerbosService(param.Engine, param.AuxData)
+	svcv1.RegisterCerbosServiceServer(hm, cerbosSvc)
 
 	if s.conf.AdminAPI.Enabled {
-		log.Info("Starting admin service")
+		log.Info("Enabling admin service")
 		creds := s.conf.AdminAPI.AdminCredentials
 		if creds.isUnsafe() {
 			log.Warn("[SECURITY RISK] Admin API uses default credentials which are unsafe for production use. Please change the credentials by updating the configuration file.")
@@ -350,66 +397,23 @@ func (s *Server) startGRPCServer(l net.Listener, param Param) (*grpcSrvs, error)
 			return nil, err
 		}
 
-		gs.admin = svc.NewCerbosAdminService(param.Store, param.AuditLog, adminUser, adminPasswdHash)
-		svcv1.RegisterCerbosAdminServiceServer(gs.server, gs.admin)
-		s.health.SetServingStatus(svcv1.CerbosAdminService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+		adminSvc := svc.NewCerbosAdminService(param.Store, param.AuditLog, adminUser, adminPasswdHash)
+		svcv1.RegisterCerbosAdminServiceServer(hm, adminSvc)
 	}
 
 	if s.conf.PlaygroundEnabled {
-		log.Info("Starting playground service")
-		gs.playground = svc.NewCerbosPlaygroundService()
-		svcv1.RegisterCerbosPlaygroundServiceServer(gs.server, gs.playground)
-		s.health.SetServingStatus(svcv1.CerbosPlaygroundService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+		log.Info("Enabling playground service")
+		playgroundSvc := svc.NewCerbosPlaygroundService()
+		svcv1.RegisterCerbosPlaygroundServiceServer(hm, playgroundSvc)
 	}
 
-	s.group.Go(func() error {
-		log.Info(fmt.Sprintf("Starting gRPC server at %s", s.conf.GRPCListenAddr))
-
-		cleanup, err := admin.Register(gs.server)
-		if err != nil {
-			log.Error("Failed to register gRPC admin interfaces", zap.Error(err))
-			return err
-		}
-		defer cleanup()
-
-		if err := gs.server.Serve(l); err != nil {
-			log.Error("gRPC server failed", zap.Error(err))
-			return err
-		}
-
-		log.Info("gRPC server stopped")
-		return nil
-	})
-
-	return gs, nil
+	return hm, nil
 }
 
-func (s *Server) mkGRPCServer(log *zap.Logger, auditLog audit.Log) *grpc.Server {
-	payloadLog := zap.L().Named("payload")
-
+func (s *Server) mkGRPCServer(streamInterceptor grpc.StreamServerInterceptor, unaryInterceptor grpc.UnaryServerInterceptor) *grpc.Server {
 	opts := []grpc.ServerOption{
-		grpc.ChainStreamInterceptor(
-			grpc_recovery.StreamServerInterceptor(),
-			grpc_validator.StreamServerInterceptor(),
-			grpc_ctxtags.StreamServerInterceptor(grpc_ctxtags.WithFieldExtractorForInitialReq(svc.ExtractRequestFields)),
-			grpc_zap.StreamServerInterceptor(log,
-				grpc_zap.WithDecider(loggingDecider),
-				grpc_zap.WithMessageProducer(messageProducer),
-			),
-			grpc_zap.PayloadStreamServerInterceptor(payloadLog, payloadLoggingDecider(s.conf)),
-		),
-		grpc.ChainUnaryInterceptor(
-			grpc_recovery.UnaryServerInterceptor(),
-			grpc_validator.UnaryServerInterceptor(),
-			grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(svc.ExtractRequestFields)),
-			XForwardedHostUnaryServerInterceptor,
-			grpc_zap.UnaryServerInterceptor(log,
-				grpc_zap.WithDecider(loggingDecider),
-				grpc_zap.WithMessageProducer(messageProducer),
-			),
-			grpc_zap.PayloadUnaryServerInterceptor(payloadLog, payloadLoggingDecider(s.conf)),
-			audit.NewUnaryInterceptor(auditLog, accessLogExclude),
-		),
+		grpc.StreamInterceptor(streamInterceptor),
+		grpc.UnaryInterceptor(unaryInterceptor),
 		grpc.StatsHandler(&ocgrpc.ServerHandler{}),
 		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: maxConnectionAge}),
 		grpc.UnknownServiceHandler(handleUnknownServices),
@@ -418,7 +422,37 @@ func (s *Server) mkGRPCServer(log *zap.Logger, auditLog audit.Log) *grpc.Server 
 	return grpc.NewServer(opts...)
 }
 
-func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, gs *grpcSrvs, zpagesEnabled bool) (*http.Server, error) {
+func (s *Server) createStreamInterceptors(log *zap.Logger, auditLog audit.Log) grpc.StreamServerInterceptor {
+	payloadLog := zap.L().Named("payload")
+	return grpc_middleware.ChainStreamServer(
+		grpc_recovery.StreamServerInterceptor(),
+		grpc_validator.StreamServerInterceptor(),
+		grpc_ctxtags.StreamServerInterceptor(grpc_ctxtags.WithFieldExtractorForInitialReq(svc.ExtractRequestFields)),
+		grpc_zap.StreamServerInterceptor(log,
+			grpc_zap.WithDecider(loggingDecider),
+			grpc_zap.WithMessageProducer(messageProducer),
+		),
+		grpc_zap.PayloadStreamServerInterceptor(payloadLog, payloadLoggingDecider(s.conf)),
+	)
+}
+
+func (s *Server) createUnaryInterceptors(log *zap.Logger, auditLog audit.Log) grpc.UnaryServerInterceptor {
+	payloadLog := zap.L().Named("payload")
+	return grpc_middleware.ChainUnaryServer(
+		grpc_recovery.UnaryServerInterceptor(),
+		grpc_validator.UnaryServerInterceptor(),
+		grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(svc.ExtractRequestFields)),
+		XForwardedHostUnaryServerInterceptor,
+		grpc_zap.UnaryServerInterceptor(log,
+			grpc_zap.WithDecider(loggingDecider),
+			grpc_zap.WithMessageProducer(messageProducer),
+		),
+		grpc_zap.PayloadUnaryServerInterceptor(payloadLog, payloadLoggingDecider(s.conf)),
+		audit.NewUnaryInterceptor(auditLog, accessLogExclude),
+	)
+}
+
+func (s *Server) startHTTPServer(ctx context.Context, param httpParam) (*http.Server, error) {
 	log := zap.S().Named("http")
 
 	gwmux := runtime.NewServeMux(
@@ -433,20 +467,20 @@ func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, gs *grpcSr
 		runtime.WithRoutingErrorHandler(handleRoutingError),
 	)
 
-	if err := svcv1.RegisterCerbosServiceHandlerServer(ctx, gwmux, gs.cerbos); err != nil {
+	if err := svcv1.RegisterCerbosServiceHandlerClient(ctx, gwmux, svcv1.NewCerbosServiceClient(param.inprocGRPC)); err != nil {
 		log.Errorw("Failed to register Cerbos HTTP service", "error", err)
 		return nil, fmt.Errorf("failed to register Cerbos HTTP service: %w", err)
 	}
 
 	if s.conf.AdminAPI.Enabled {
-		if err := svcv1.RegisterCerbosAdminServiceHandlerServer(ctx, gwmux, gs.admin); err != nil {
+		if err := svcv1.RegisterCerbosAdminServiceHandlerClient(ctx, gwmux, svcv1.NewCerbosAdminServiceClient(param.inprocGRPC)); err != nil {
 			log.Errorw("Failed to register Cerbos admin HTTP service", "error", err)
 			return nil, fmt.Errorf("failed to register Cerbos admin HTTP service: %w", err)
 		}
 	}
 
 	if s.conf.PlaygroundEnabled {
-		if err := svcv1.RegisterCerbosPlaygroundServiceHandlerServer(ctx, gwmux, gs.playground); err != nil {
+		if err := svcv1.RegisterCerbosPlaygroundServiceHandlerClient(ctx, gwmux, svcv1.NewCerbosPlaygroundServiceClient(param.inprocGRPC)); err != nil {
 			log.Errorw("Continuing without playground due to registration error", "error", err)
 		}
 	}
@@ -455,7 +489,7 @@ func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, gs *grpcSr
 	// handle gRPC requests that come over http
 	cerbosMux.MatcherFunc(func(r *http.Request, _ *mux.RouteMatch) bool {
 		return r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc")
-	}).Handler(tracing.HTTPHandler(gs.server))
+	}).Handler(tracing.HTTPHandler(param.grpcServer))
 
 	cerbosMux.PathPrefix(adminEndpoint).Handler(tracing.HTTPHandler(prettyJSON(gwmux)))
 	cerbosMux.PathPrefix(apiEndpoint).Handler(tracing.HTTPHandler(prettyJSON(gwmux)))
@@ -471,7 +505,7 @@ func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, gs *grpcSr
 		cerbosMux.Path(metricsEndpoint).Handler(s.ocExporter)
 	}
 
-	if zpagesEnabled {
+	if param.zpages {
 		hm := http.NewServeMux()
 		zpages.Handle(hm, zpagesEndpoint)
 
@@ -492,7 +526,7 @@ func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, gs *grpcSr
 
 	s.group.Go(func() error {
 		log.Infof("Starting HTTP server at %s", s.conf.HTTPListenAddr)
-		err := h.Serve(l)
+		err := h.Serve(param.listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Errorw("HTTP server failed", "error", err)
 			return err
