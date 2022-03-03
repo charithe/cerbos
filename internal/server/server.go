@@ -168,6 +168,13 @@ type Param struct {
 	ZPagesEnabled bool
 }
 
+type grpcSrvs struct {
+	cerbos     svcv1.CerbosServiceServer
+	playground svcv1.CerbosPlaygroundServiceServer
+	admin      svcv1.CerbosAdminServiceServer
+	server     *grpc.Server
+}
+
 type Server struct {
 	conf       *Conf
 	cancelFunc context.CancelFunc
@@ -214,13 +221,13 @@ func (s *Server) Start(ctx context.Context, param Param) error {
 	}
 
 	// start servers
-	grpcServer, err := s.startGRPCServer(grpcL, param)
+	gs, err := s.startGRPCServer(grpcL, param)
 	if err != nil {
 		log.Error("Failed to start GRPC server", zap.Error(err))
 		return err
 	}
 
-	httpServer, err := s.startHTTPServer(ctx, httpL, grpcServer, param.ZPagesEnabled)
+	httpServer, err := s.startHTTPServer(ctx, httpL, gs, param.ZPagesEnabled)
 	if err != nil {
 		log.Error("Failed to start HTTP server", zap.Error(err))
 		return err
@@ -234,7 +241,7 @@ func (s *Server) Start(ctx context.Context, param Param) error {
 		s.health.Shutdown()
 
 		log.Debug("Shutting down gRPC server")
-		grpcServer.GracefulStop()
+		gs.server.GracefulStop()
 
 		log.Debug("Shutting down HTTP server")
 		shutdownCtx, cancelFunc := context.WithTimeout(context.Background(), defaultTimeout)
@@ -317,15 +324,17 @@ func (s *Server) getTLSConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func (s *Server) startGRPCServer(l net.Listener, param Param) (*grpc.Server, error) {
+func (s *Server) startGRPCServer(l net.Listener, param Param) (*grpcSrvs, error) {
 	log := zap.L().Named("grpc")
-	server := s.mkGRPCServer(log, param.AuditLog)
+	gs := &grpcSrvs{
+		server: s.mkGRPCServer(log, param.AuditLog),
+	}
 
-	healthpb.RegisterHealthServer(server, s.health)
-	reflection.Register(server)
+	healthpb.RegisterHealthServer(gs.server, s.health)
+	reflection.Register(gs.server)
 
-	cerbosSvc := svc.NewCerbosService(param.Engine, param.AuxData)
-	svcv1.RegisterCerbosServiceServer(server, cerbosSvc)
+	gs.cerbos = svc.NewCerbosService(param.Engine, param.AuxData)
+	svcv1.RegisterCerbosServiceServer(gs.server, gs.cerbos)
 	s.health.SetServingStatus(svcv1.CerbosService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 
 	if s.conf.AdminAPI.Enabled {
@@ -341,27 +350,29 @@ func (s *Server) startGRPCServer(l net.Listener, param Param) (*grpc.Server, err
 			return nil, err
 		}
 
-		svcv1.RegisterCerbosAdminServiceServer(server, svc.NewCerbosAdminService(param.Store, param.AuditLog, adminUser, adminPasswdHash))
+		gs.admin = svc.NewCerbosAdminService(param.Store, param.AuditLog, adminUser, adminPasswdHash)
+		svcv1.RegisterCerbosAdminServiceServer(gs.server, gs.admin)
 		s.health.SetServingStatus(svcv1.CerbosAdminService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 	}
 
 	if s.conf.PlaygroundEnabled {
 		log.Info("Starting playground service")
-		svcv1.RegisterCerbosPlaygroundServiceServer(server, svc.NewCerbosPlaygroundService())
+		gs.playground = svc.NewCerbosPlaygroundService()
+		svcv1.RegisterCerbosPlaygroundServiceServer(gs.server, gs.playground)
 		s.health.SetServingStatus(svcv1.CerbosPlaygroundService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 	}
 
 	s.group.Go(func() error {
 		log.Info(fmt.Sprintf("Starting gRPC server at %s", s.conf.GRPCListenAddr))
 
-		cleanup, err := admin.Register(server)
+		cleanup, err := admin.Register(gs.server)
 		if err != nil {
 			log.Error("Failed to register gRPC admin interfaces", zap.Error(err))
 			return err
 		}
 		defer cleanup()
 
-		if err := server.Serve(l); err != nil {
+		if err := gs.server.Serve(l); err != nil {
 			log.Error("gRPC server failed", zap.Error(err))
 			return err
 		}
@@ -370,7 +381,7 @@ func (s *Server) startGRPCServer(l net.Listener, param Param) (*grpc.Server, err
 		return nil
 	})
 
-	return server, nil
+	return gs, nil
 }
 
 func (s *Server) mkGRPCServer(log *zap.Logger, auditLog audit.Log) *grpc.Server {
@@ -407,7 +418,7 @@ func (s *Server) mkGRPCServer(log *zap.Logger, auditLog audit.Log) *grpc.Server 
 	return grpc.NewServer(opts...)
 }
 
-func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, grpcSrv *grpc.Server, zpagesEnabled bool) (*http.Server, error) {
+func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, gs *grpcSrvs, zpagesEnabled bool) (*http.Server, error) {
 	log := zap.S().Named("http")
 
 	gwmux := runtime.NewServeMux(
@@ -422,25 +433,20 @@ func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, grpcSrv *g
 		runtime.WithRoutingErrorHandler(handleRoutingError),
 	)
 
-	grpcConn, err := s.mkGRPCConn(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := svcv1.RegisterCerbosServiceHandler(ctx, gwmux, grpcConn); err != nil {
+	if err := svcv1.RegisterCerbosServiceHandlerServer(ctx, gwmux, gs.cerbos); err != nil {
 		log.Errorw("Failed to register Cerbos HTTP service", "error", err)
 		return nil, fmt.Errorf("failed to register Cerbos HTTP service: %w", err)
 	}
 
 	if s.conf.AdminAPI.Enabled {
-		if err := svcv1.RegisterCerbosAdminServiceHandler(ctx, gwmux, grpcConn); err != nil {
+		if err := svcv1.RegisterCerbosAdminServiceHandlerServer(ctx, gwmux, gs.admin); err != nil {
 			log.Errorw("Failed to register Cerbos admin HTTP service", "error", err)
 			return nil, fmt.Errorf("failed to register Cerbos admin HTTP service: %w", err)
 		}
 	}
 
 	if s.conf.PlaygroundEnabled {
-		if err := svcv1.RegisterCerbosPlaygroundServiceHandler(ctx, gwmux, grpcConn); err != nil {
+		if err := svcv1.RegisterCerbosPlaygroundServiceHandlerServer(ctx, gwmux, gs.playground); err != nil {
 			log.Errorw("Continuing without playground due to registration error", "error", err)
 		}
 	}
@@ -449,11 +455,16 @@ func (s *Server) startHTTPServer(ctx context.Context, l net.Listener, grpcSrv *g
 	// handle gRPC requests that come over http
 	cerbosMux.MatcherFunc(func(r *http.Request, _ *mux.RouteMatch) bool {
 		return r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc")
-	}).Handler(tracing.HTTPHandler(grpcSrv))
+	}).Handler(tracing.HTTPHandler(gs.server))
 
 	cerbosMux.PathPrefix(adminEndpoint).Handler(tracing.HTTPHandler(prettyJSON(gwmux)))
 	cerbosMux.PathPrefix(apiEndpoint).Handler(tracing.HTTPHandler(prettyJSON(gwmux)))
 	cerbosMux.Path(schemaEndpoint).HandlerFunc(schema.ServeSvcSwagger)
+
+	grpcConn, err := s.mkGRPCConn(ctx)
+	if err != nil {
+		return nil, err
+	}
 	cerbosMux.Path(healthEndpoint).HandlerFunc(s.handleHTTPHealthCheck(grpcConn))
 
 	if s.conf.MetricsEnabled && s.ocExporter != nil {
