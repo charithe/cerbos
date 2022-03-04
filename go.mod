@@ -19,6 +19,7 @@ require (
 	github.com/fatih/structtag v1.2.0
 	github.com/fergusstrange/embedded-postgres v1.14.0
 	github.com/fsnotify/fsnotify v1.5.1
+	github.com/fullstorydev/grpchan v1.1.1
 	github.com/gdamore/tcell/v2 v2.4.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-cmd/cmd v1.4.0
@@ -58,6 +59,7 @@ require (
 	github.com/tidwall/sjson v1.2.4
 	go.elastic.co/ecszap v1.0.1
 	go.opencensus.io v0.23.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.29.0
 	go.opentelemetry.io/otel v1.4.1
 	go.opentelemetry.io/otel/bridge/opencensus v0.27.1
 	go.opentelemetry.io/otel/exporters/jaeger v1.4.1
@@ -120,7 +122,6 @@ require (
 	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/envoyproxy/go-control-plane v0.10.1 // indirect
 	github.com/felixge/httpsnoop v1.0.2 // indirect
-	github.com/fullstorydev/grpchan v1.1.1 // indirect
 	github.com/gdamore/encoding v1.0.0 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
 	github.com/go-git/go-billy/v5 v5.3.1 // indirect

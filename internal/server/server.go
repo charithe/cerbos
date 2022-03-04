@@ -31,6 +31,7 @@ import (
 	"go.opencensus.io/plugin/ochttp"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/zpages"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -426,6 +427,7 @@ func (s *Server) createStreamInterceptors(log *zap.Logger, auditLog audit.Log) g
 	payloadLog := zap.L().Named("payload")
 	return grpc_middleware.ChainStreamServer(
 		grpc_recovery.StreamServerInterceptor(),
+		otelgrpc.StreamServerInterceptor(),
 		grpc_validator.StreamServerInterceptor(),
 		grpc_ctxtags.StreamServerInterceptor(grpc_ctxtags.WithFieldExtractorForInitialReq(svc.ExtractRequestFields)),
 		grpc_zap.StreamServerInterceptor(log,
@@ -440,6 +442,7 @@ func (s *Server) createUnaryInterceptors(log *zap.Logger, auditLog audit.Log) gr
 	payloadLog := zap.L().Named("payload")
 	return grpc_middleware.ChainUnaryServer(
 		grpc_recovery.UnaryServerInterceptor(),
+		otelgrpc.UnaryServerInterceptor(),
 		grpc_validator.UnaryServerInterceptor(),
 		grpc_ctxtags.UnaryServerInterceptor(grpc_ctxtags.WithFieldExtractor(svc.ExtractRequestFields)),
 		XForwardedHostUnaryServerInterceptor,
