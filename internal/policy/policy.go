@@ -193,6 +193,23 @@ func GetHash(p *policyv1.Policy) uint64 {
 	return p.Metadata.Hash.GetValue()
 }
 
+// GetHashBytes returns the hash of the policy as bytes.
+func GetHashBytes(p *policyv1.Policy) []byte {
+	h := GetHash(p)
+
+	var b []byte
+	return append(b,
+		byte(h>>56),
+		byte(h>>48),
+		byte(h>>40),
+		byte(h>>32),
+		byte(h>>24),
+		byte(h>>16),
+		byte(h>>8),
+		byte(h),
+	)
+}
+
 // GetSourceFile gets the source file name from metadata if it exists.
 func GetSourceFile(p *policyv1.Policy) string {
 	if p == nil {

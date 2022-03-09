@@ -113,6 +113,12 @@ func compileResourcePolicy(modCtx *moduleCtx, schemaMgr schema.Manager) *runtime
 		return nil
 	}
 
+	cacheKey := policy.GetHashBytes(modCtx.def)
+	rrp := &runtimev1.RunnableResourcePolicySet_Policy{}
+	if err := cacheImpl.get(cacheKey, rrp); err == nil && rrp != nil {
+		return rrp
+	}
+
 	referencedRoles, err := compileImportedDerivedRoles(modCtx, rp)
 	if err != nil {
 		return nil
@@ -122,13 +128,11 @@ func compileResourcePolicy(modCtx *moduleCtx, schemaMgr schema.Manager) *runtime
 		return nil
 	}
 
-	rrp := &runtimev1.RunnableResourcePolicySet_Policy{
-		DerivedRoles: referencedRoles,
-		Scope:        rp.Scope,
-		Rules:        make([]*runtimev1.RunnableResourcePolicySet_Policy_Rule, len(rp.Rules)),
-		Variables:    compileVariables(modCtx, modCtx.def.Variables),
-		Schemas:      rp.Schemas,
-	}
+	rrp.DerivedRoles = referencedRoles
+	rrp.Scope = rp.Scope
+	rrp.Rules = make([]*runtimev1.RunnableResourcePolicySet_Policy_Rule, len(rp.Rules))
+	rrp.Variables = compileVariables(modCtx, modCtx.def.Variables)
+	rrp.Schemas = rp.Schemas
 
 	for i, rule := range rp.Rules {
 		rule.Name = namer.ResourceRuleName(rule, i+1)
@@ -139,6 +143,8 @@ func compileResourcePolicy(modCtx *moduleCtx, schemaMgr schema.Manager) *runtime
 
 		rrp.Rules[i] = cr
 	}
+
+	_ = cacheImpl.put(cacheKey, rrp)
 
 	return rrp
 }
@@ -233,13 +239,14 @@ func doCompileDerivedRoles(modCtx *moduleCtx) *runtimev1.RunnableDerivedRolesSet
 		return nil
 	}
 
-	// TODO(cell) Because derived roles can be imported many times, cache the result to avoid repeating the work
-	compiled := &runtimev1.RunnableDerivedRolesSet{
-		Meta: &runtimev1.RunnableDerivedRolesSet_Metadata{
-			Fqn: modCtx.fqn,
-		},
-		DerivedRoles: make(map[string]*runtimev1.RunnableDerivedRole, len(dr.Definitions)),
+	cacheKey := policy.GetHashBytes(modCtx.def)
+	compiled := &runtimev1.RunnableDerivedRolesSet{}
+	if err := cacheImpl.get(cacheKey, compiled); err == nil && compiled != nil {
+		return compiled
 	}
+
+	compiled.Meta = &runtimev1.RunnableDerivedRolesSet_Metadata{Fqn: modCtx.fqn}
+	compiled.DerivedRoles = make(map[string]*runtimev1.RunnableDerivedRole, len(dr.Definitions))
 
 	variables := compileVariables(modCtx, modCtx.def.Variables)
 
@@ -257,6 +264,8 @@ func doCompileDerivedRoles(modCtx *moduleCtx) *runtimev1.RunnableDerivedRolesSet
 		rdr.Condition = compileCondition(modCtx, fmt.Sprintf("derived role '%s' (#%d)", def.Name, i), def.Condition)
 		compiled.DerivedRoles[def.Name] = rdr
 	}
+
+	_ = cacheImpl.put(cacheKey, compiled)
 
 	return compiled
 }
@@ -361,11 +370,15 @@ func compilePrincipalPolicy(modCtx *moduleCtx) *runtimev1.RunnablePrincipalPolic
 		return nil
 	}
 
-	rpp := &runtimev1.RunnablePrincipalPolicySet_Policy{
-		Scope:         pp.Scope,
-		ResourceRules: make(map[string]*runtimev1.RunnablePrincipalPolicySet_Policy_ResourceRules, len(pp.Rules)),
-		Variables:     compileVariables(modCtx, modCtx.def.Variables),
+	cacheKey := policy.GetHashBytes(modCtx.def)
+	rpp := &runtimev1.RunnablePrincipalPolicySet_Policy{}
+	if err := cacheImpl.get(cacheKey, rpp); err == nil && rpp != nil {
+		return rpp
 	}
+
+	rpp.Scope = pp.Scope
+	rpp.ResourceRules = make(map[string]*runtimev1.RunnablePrincipalPolicySet_Policy_ResourceRules, len(pp.Rules))
+	rpp.Variables = compileVariables(modCtx, modCtx.def.Variables)
 
 	for _, rule := range pp.Rules {
 		rr := &runtimev1.RunnablePrincipalPolicySet_Policy_ResourceRules{
@@ -385,6 +398,8 @@ func compilePrincipalPolicy(modCtx *moduleCtx) *runtimev1.RunnablePrincipalPolic
 
 		rpp.ResourceRules[rule.Resource] = rr
 	}
+
+	_ = cacheImpl.put(cacheKey, rpp)
 
 	return rpp
 }

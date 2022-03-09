@@ -10,6 +10,7 @@ services:
     volumes:
       - ${WORK_DIR}/cerbos:/conf
       - ${WORK_DIR}/policies:/policies
+      - ${WORK_DIR}/tmp:/tmp
     ports:
       - "3592:3592"
       - "3593:3593"

@@ -126,6 +126,11 @@ func Start(ctx context.Context, zpagesEnabled bool) error {
 		return fmt.Errorf("failed to create store: %w", err)
 	}
 
+	// initialise compile cache
+	if err := compile.InitCache(ctx); err != nil {
+		return fmt.Errorf("failed to initialise compile cache: %w", err)
+	}
+
 	// create schema manager
 	schemaMgr, err := internalSchema.New(ctx, store)
 	if err != nil {
