@@ -45,7 +45,7 @@ These APIs can be called via [cURL](#api-request), or in production via one of o
 
 Cerbos is popular among large and small organizations:
 
-<table cellspacing="1" cellpadding="0">
+<table cellspacing="1" cellpadding="0" style="background-color: #FFFFFF;">
   <tr>
   <td valign="center">
       <a href="https://blockchain.com">
@@ -67,7 +67,7 @@ Cerbos is popular among large and small organizations:
         <img src="https://cerbos.dev/assets/9fin.svg" width="256" height="35" />
       </a>
     </td>
-    
+
   </tr>
   <tr>
     <td valign="center">
