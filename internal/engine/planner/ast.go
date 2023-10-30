@@ -9,17 +9,16 @@ import (
 	"sort"
 	"strings"
 
+	celast "github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
 	"github.com/tidwall/pretty"
 	"go.uber.org/multierr"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	enginev1 "github.com/cerbos/cerbos/api/genpb/cerbos/engine/v1"
 	"github.com/cerbos/cerbos/internal/conditions"
-	"github.com/cerbos/cerbos/internal/engine/planner/internal"
 	"github.com/cerbos/cerbos/internal/util"
 )
 
@@ -96,119 +95,191 @@ func opFromCLE(fn string) (string, error) {
 	}
 }
 
-type replaceVarsFunc func(e *exprpb.Expr) (output *exprpb.Expr, matched bool, err error)
+type replaceVarsFunc func(e celast.Expr) (output celast.Expr, matched bool, err error)
 
-func replaceVarsGen(e *exprpb.Expr, f replaceVarsFunc) (output *exprpb.Expr, err error) {
-	var r func(e *exprpb.Expr) *exprpb.Expr
+func replaceVarsGen(e celast.Expr, f replaceVarsFunc) (celast.Expr, error) {
+	vr := newVarReplacer(f)
+	output := vr.replace(e)
+	return output, vr.err
+}
 
-	r = func(e *exprpb.Expr) *exprpb.Expr {
-		if e == nil {
-			return nil
-		}
+type varReplacer struct {
+	exprFactory   celast.ExprFactory
+	replaceVarsFn replaceVarsFunc
+	err           error
+}
 
-		switch ex := e.ExprKind.(type) {
-		case *exprpb.Expr_SelectExpr:
-			var e1 *exprpb.Expr
-			var matched bool
+func newVarReplacer(replaceVarsFn replaceVarsFunc) *varReplacer {
+	return &varReplacer{exprFactory: celast.NewExprFactory(), replaceVarsFn: replaceVarsFn}
+}
 
-			e1, matched, err = f(e)
-			if err != nil {
-				break
-			}
-			if matched {
-				return e1
-			}
-			ex.SelectExpr.Operand = r(ex.SelectExpr.Operand)
-		case *exprpb.Expr_CallExpr:
-			ex.CallExpr.Target = r(ex.CallExpr.Target)
-			for i, arg := range ex.CallExpr.Args {
-				ex.CallExpr.Args[i] = r(arg)
-			}
-		case *exprpb.Expr_StructExpr:
-			for _, entry := range ex.StructExpr.Entries {
-				if k, ok := entry.KeyKind.(*exprpb.Expr_CreateStruct_Entry_MapKey); ok {
-					k.MapKey = r(k.MapKey)
-				}
-				entry.Value = r(entry.Value)
-			}
-		case *exprpb.Expr_ComprehensionExpr:
-			ce := ex.ComprehensionExpr
-			ce.IterRange = r(ce.IterRange)
-			ce.AccuInit = r(ce.AccuInit)
-			ce.LoopStep = r(ce.LoopStep)
-			ce.LoopCondition = r(ce.LoopCondition)
-			// ce.Result seems to be always an identifier, so isn't necessary to process
-		case *exprpb.Expr_ListExpr:
-			for i, element := range ex.ListExpr.Elements {
-				ex.ListExpr.Elements[i] = r(element)
-			}
-		}
+func (vr *varReplacer) replace(e celast.Expr) celast.Expr {
+	if vr.err != nil {
 		return e
 	}
 
-	output, ok := proto.Clone(e).(*exprpb.Expr)
-	if !ok {
-		return nil, fmt.Errorf("failed to clone an expression: %v", e)
+	if e == nil {
+		return e
 	}
-	output = r(output)
-	internal.UpdateIds(output)
 
-	return output, err
+	switch e.Kind() {
+	case celast.CallKind:
+		ce := e.AsCall()
+		args := ce.Args()
+		for i, argExpr := range args {
+			args[i] = vr.replace(argExpr)
+		}
+
+		if ce.IsMemberFunction() {
+			target := vr.replace(ce.Target())
+			return vr.exprFactory.NewMemberCall(e.ID(), ce.FunctionName(), target, args...)
+		}
+
+		return vr.exprFactory.NewCall(e.ID(), ce.FunctionName(), args...)
+	case celast.ComprehensionKind:
+		ce := e.AsComprehension()
+		iterRange := vr.replace(ce.IterRange())
+		accuInit := vr.replace(ce.AccuInit())
+		loopStep := vr.replace(ce.LoopStep())
+		loopCondition := vr.replace(ce.LoopCondition())
+		result := vr.replace(ce.Result())
+
+		return vr.exprFactory.NewComprehension(e.ID(), iterRange, ce.IterVar(), ce.AccuVar(), accuInit, loopCondition, loopStep, result)
+	case celast.ListKind:
+		le := e.AsList()
+		elements := le.Elements()
+		for i, elExpr := range elements {
+			elements[i] = vr.replace(elExpr)
+		}
+
+		return vr.exprFactory.NewList(e.ID(), elements, le.OptionalIndices())
+	case celast.MapKind:
+		me := e.AsMap()
+		entries := me.Entries()
+		for i, entry := range entries {
+			switch entry.Kind() {
+			case celast.MapEntryKind:
+				mapEntry := entry.AsMapEntry()
+				key := vr.replace(mapEntry.Key())
+				value := vr.replace(mapEntry.Value())
+				entries[i] = vr.exprFactory.NewMapEntry(entry.ID(), key, value, mapEntry.IsOptional())
+			case celast.StructFieldKind:
+				structEntry := entry.AsStructField()
+				value := vr.replace(structEntry.Value())
+				entries[i] = vr.exprFactory.NewStructField(entry.ID(), structEntry.Name(), value, structEntry.IsOptional())
+			}
+		}
+
+		return vr.exprFactory.NewMap(e.ID(), entries)
+	case celast.SelectKind:
+		ex, matched, err := vr.replaceVarsFn(e)
+		if err != nil {
+			vr.err = err
+			return e
+		}
+
+		if matched {
+			return ex
+		}
+
+		se := e.AsSelect()
+		operand := vr.replace(se.Operand())
+
+		return vr.exprFactory.NewSelect(e.ID(), operand, se.FieldName())
+	case celast.StructKind:
+		se := e.AsStruct()
+		fields := se.Fields()
+		for i, field := range fields {
+			switch field.Kind() {
+			case celast.MapEntryKind:
+				mapEntry := field.AsMapEntry()
+				key := vr.replace(mapEntry.Key())
+				value := vr.replace(mapEntry.Value())
+				fields[i] = vr.exprFactory.NewMapEntry(field.ID(), key, value, mapEntry.IsOptional())
+			case celast.StructFieldKind:
+				structEntry := field.AsStructField()
+				value := vr.replace(structEntry.Value())
+				fields[i] = vr.exprFactory.NewStructField(field.ID(), structEntry.Name(), value, structEntry.IsOptional())
+			}
+		}
+
+		return vr.exprFactory.NewStruct(e.ID(), se.TypeName(), fields)
+	default:
+		return e
+	}
 }
 
 // This functions wraps references to known resource attributes in an `id` function call, which simply returns its argument.
 // E.g. Replace R.attr.field1 with id(R.attr.field1) iif R.attr.field1 is passed in the request to the Query Planner API.
 // This trick is necessary evaluate expression like `P.attr.struct1[R.attr.field1]`, otherwise CEL tries to use `R.attr.field1`
 // as a qualifier for `P.attr.struct1` and produces the error https://github.com/cerbos/cerbos/issues/1340
-func replaceResourceVals(e *exprpb.Expr, vals map[string]*structpb.Value) (output *exprpb.Expr, err error) {
-	return replaceVarsGen(e, func(ex *exprpb.Expr) (output *exprpb.Expr, matched bool, err error) {
-		se, ok := ex.ExprKind.(*exprpb.Expr_SelectExpr)
-		if !ok {
+func replaceResourceVals(e celast.Expr, vals map[string]*structpb.Value) (output celast.Expr, err error) {
+	return replaceVarsGen(e, func(ex celast.Expr) (output celast.Expr, matched bool, err error) {
+		if ex.Kind() != celast.SelectKind {
 			return nil, false, nil
 		}
-		sel := se.SelectExpr
+		se := ex.AsSelect()
+		field := se.FieldName()
+		if _, ok := vals[field]; ok {
+			seo1 := se.Operand()
+			if seo1.Kind() != celast.SelectKind {
+				return nil, false, nil
+			}
 
-		field := sel.Field
-		if _, ok = vals[field]; ok {
-			sel = sel.GetOperand().GetSelectExpr()
-			if sel == nil || sel.Field != conditions.CELAttrField {
+			sel1 := seo1.AsSelect()
+			if sel1.FieldName() != conditions.CELAttrField {
 				return nil, false, nil
 			}
-			// match R.attr.<field>
-			if ident := sel.Operand.GetIdentExpr(); ident != nil && ident.Name == conditions.CELResourceAbbrev {
-				return internal.MkCallExpr(conditions.IDFn, ex), true, nil
-			}
-			sel = sel.GetOperand().GetSelectExpr()
-			if sel == nil || sel.Field != conditions.CELResourceField {
-				return nil, false, nil
-			}
-			// match request.resource.attr.<field>
-			if ident := sel.Operand.GetIdentExpr(); ident != nil && ident.Name == conditions.CELRequestIdent {
-				return internal.MkCallExpr(conditions.IDFn, ex), true, nil
+
+			seo2 := sel1.Operand()
+			switch seo2.Kind() {
+			case celast.IdentKind:
+				if ident := seo2.AsIdent(); ident == conditions.CELResourceAbbrev {
+					nextID := celast.MaxID(celast.NewAST(ex, nil)) + 1
+					return celast.NewExprFactory().NewCall(nextID, conditions.IDFn, ex), true, nil
+				}
+			case celast.SelectKind:
+				sel2 := seo2.AsSelect()
+				if sel2.FieldName() != conditions.CELResourceField {
+					return nil, false, nil
+				}
+
+				seo3 := sel2.Operand()
+				if seo3.Kind() != celast.IdentKind {
+					return nil, false, nil
+				}
+
+				if ident := seo3.AsIdent(); ident == conditions.CELRequestIdent {
+					nextID := celast.MaxID(celast.NewAST(ex, nil)) + 1
+					return celast.NewExprFactory().NewCall(nextID, conditions.IDFn, ex), true, nil
+				}
 			}
 		}
 		return nil, false, nil
 	})
 }
 
-func replaceVars(e *exprpb.Expr, vars map[string]*exprpb.Expr) (output *exprpb.Expr, err error) {
-	return replaceVarsGen(e, func(ex *exprpb.Expr) (output *exprpb.Expr, matched bool, err error) {
-		se, ok := ex.ExprKind.(*exprpb.Expr_SelectExpr)
-		if !ok {
+func replaceVars(e celast.Expr, vars map[string]celast.Expr) (output celast.Expr, err error) {
+	return replaceVarsGen(e, func(ex celast.Expr) (output celast.Expr, matched bool, err error) {
+		if ex.Kind() != celast.SelectKind {
 			return nil, false, nil
 		}
-		sel := se.SelectExpr
-		ident := sel.Operand.GetIdentExpr()
-		if ident != nil && (ident.Name == conditions.CELVariablesAbbrev || ident.Name == conditions.CELVariablesIdent) {
+		se := ex.AsSelect()
+		seo := se.Operand()
+		if seo.Kind() != celast.IdentKind {
+			return nil, false, nil
+		}
+
+		ident := seo.AsIdent()
+		if ident == conditions.CELVariablesAbbrev || ident == conditions.CELVariablesIdent {
 			matched = true
-			if e1, ok := vars[sel.Field]; ok {
-				//nolint:forcetypeassert
-				output = proto.Clone(e1).(*exprpb.Expr)
+			if e1, ok := vars[se.FieldName()]; ok {
+				output = celast.NewExprFactory().CopyExpr(e1)
 			} else {
-				err = multierr.Append(err, fmt.Errorf("unknown variable %q", sel.Field))
+				err = multierr.Append(err, fmt.Errorf("unknown variable %q", se.FieldName()))
 			}
 		}
-		return
+		return output, matched, err
 	})
 }
 

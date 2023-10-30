@@ -12,12 +12,12 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
+	celast "github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/types"
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
-
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/interpreter"
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 
 	effectv1 "github.com/cerbos/cerbos/api/genpb/cerbos/effect/v1"
 	enginev1 "github.com/cerbos/cerbos/api/genpb/cerbos/engine/v1"
@@ -677,14 +677,18 @@ func ResidualExpr(a *cel.Ast, details *cel.EvalDetails) *exprpb.Expr {
 	return pruned.Expr
 }
 
-func variableExprs(variables []*runtimev1.Variable) (map[string]*exprpb.Expr, error) {
+func variableExprs(variables []*runtimev1.Variable) (map[string]celast.Expr, error) {
 	if len(variables) == 0 {
 		return nil, nil
 	}
 
-	exprs := make(map[string]*exprpb.Expr, len(variables))
+	exprs := make(map[string]celast.Expr, len(variables))
 	for _, variable := range variables {
-		expr, err := replaceVars(variable.Expr.Checked.Expr, exprs)
+		varExpr, err := celast.ToAST(variable.Expr.Checked)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert variable %q to AST: %w", variable.Name, err)
+		}
+		expr, err := replaceVars(varExpr.Expr(), exprs)
 		if err != nil {
 			return nil, err
 		}
