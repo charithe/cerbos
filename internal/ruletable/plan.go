@@ -21,6 +21,7 @@ import (
 	"github.com/cerbos/cerbos/internal/evaluator"
 	"github.com/cerbos/cerbos/internal/namer"
 	"github.com/cerbos/cerbos/internal/observability/tracing"
+	"github.com/cerbos/cerbos/internal/ruletable/index"
 	"github.com/cerbos/cerbos/internal/ruletable/internal"
 	"github.com/cerbos/cerbos/internal/ruletable/planner"
 	"github.com/cerbos/cerbos/internal/schema"
@@ -128,6 +129,7 @@ func (rt *RuleTable) planWithAuditTrail(
 
 				rolesIncludingParents := rt.idx.AddParentRoles([]string{resourceScope}, []string{role})
 
+				var bindings []*index.Binding
 				for _, scope := range scopes {
 					var scopeAllowNode *planner.QpN
 					var scopeDenyNode *planner.QpN
@@ -181,7 +183,7 @@ func (rt *RuleTable) planWithAuditTrail(
 					if pt == policyv1.Kind_KIND_PRINCIPAL {
 						pid = input.Principal.Id
 					}
-					bindings := rt.idx.Query(resourceVersion, sanitizedResource, scope, action, rolesIncludingParents, pt, pid)
+					bindings = rt.idx.Query(resourceVersion, sanitizedResource, scope, action, rolesIncludingParents, pt, pid, bindings[:0])
 					for _, b := range bindings {
 						if m := rt.GetMeta(b.OriginFqn); m != nil && m.GetSourceAttributes() != nil {
 							maps.Copy(effectivePolicies, m.GetSourceAttributes())
@@ -241,7 +243,6 @@ func (rt *RuleTable) planWithAuditTrail(
 							}
 						}
 					}
-
 					roleDenyNode = addNode(roleDenyNode, scopeDenyNode, planner.MkOrNode)
 					roleDenyRolePolicyNode = addNode(roleDenyRolePolicyNode, scopeDenyRolePolicyNode, planner.MkOrNode)
 

@@ -172,7 +172,7 @@ func (d dimension[T]) Keys() []T {
 
 // Query returns OR(d[k] for k in keys).
 // The returned bitmap may alias a stored bitmap; callers must not mutate it.
-func (d dimension[T]) Query(keys []T) *roaring.Bitmap {
+func (d dimension[T]) Query(arena *bitmapArena, keys []T) *roaring.Bitmap {
 	parts := make([]*roaring.Bitmap, 0, len(keys))
 	for _, k := range keys {
 		if bm, ok := d.m[k]; ok {
@@ -181,10 +181,10 @@ func (d dimension[T]) Query(keys []T) *roaring.Bitmap {
 	}
 	switch len(parts) {
 	case 0:
-		return roaring.New()
+		return emptyBitmap
 	case 1:
 		return parts[0]
 	default:
-		return roaring.FastOr(parts...)
+		return arena.orInto(parts)
 	}
 }

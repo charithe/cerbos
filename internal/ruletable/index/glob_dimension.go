@@ -76,17 +76,17 @@ func (gd *globDimension) Remove(key string, id uint32) {
 // Query returns the OR of the literal bitmap for value and all glob bitmaps
 // whose pattern matches value. The returned bitmap may alias a stored bitmap;
 // callers must not mutate it.
-func (gd *globDimension) Query(value string) *roaring.Bitmap {
+func (gd *globDimension) Query(arena *bitmapArena, value string) *roaring.Bitmap {
 	literalBM := gd.literals[value]
 
 	if len(gd.compiled) == 0 {
 		if literalBM != nil {
 			return literalBM
 		}
-		return roaring.New()
+		return emptyBitmap
 	}
 
-	// Collect literal + matching glob bitmaps and combine with FastOr.
+	// Collect literal + matching glob bitmaps and combine with in-place OR.
 	var parts []*roaring.Bitmap
 	if literalBM != nil {
 		parts = append(parts, literalBM)
@@ -99,17 +99,17 @@ func (gd *globDimension) Query(value string) *roaring.Bitmap {
 
 	switch len(parts) {
 	case 0:
-		return roaring.New()
+		return emptyBitmap
 	case 1:
 		return parts[0]
 	default:
-		return roaring.FastOr(parts...)
+		return arena.orInto(parts)
 	}
 }
 
 // QueryMultiple returns OR of all bitmaps matching any of the given values.
 // The returned bitmap may alias a stored bitmap; callers must not mutate it.
-func (gd *globDimension) QueryMultiple(values []string) *roaring.Bitmap {
+func (gd *globDimension) QueryMultiple(arena *bitmapArena, values []string) *roaring.Bitmap {
 	parts := make([]*roaring.Bitmap, 0, len(values))
 	for _, v := range values {
 		if bm, ok := gd.literals[v]; ok {
@@ -123,11 +123,11 @@ func (gd *globDimension) QueryMultiple(values []string) *roaring.Bitmap {
 	}
 	switch len(parts) {
 	case 0:
-		return roaring.New()
+		return emptyBitmap
 	case 1:
 		return parts[0]
 	default:
-		return roaring.FastOr(parts...)
+		return arena.orInto(parts)
 	}
 }
 

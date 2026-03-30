@@ -197,53 +197,56 @@ func (m *Index) GetAllRows() ([]*Binding, error) {
 // Query returns bindings matching the given dimensions. Nil or zero-values mean
 // "match all" for that dimension. Synthetic DENYs from role policy AllowActions
 // are prepended when querying for a specific action with KIND_RESOURCE.
-func (m *Index) Query(version, resource, scope, action string, roles []string, policyKind policyv1.Kind, principalID string) []*Binding {
+func (m *Index) Query(version, resource, scope, action string, roles []string, policyKind policyv1.Kind, principalID string, buf []*Binding) []*Binding {
 	bi := m.bi
 
 	if bi.universe.IsEmpty() {
-		return nil
+		return buf
 	}
+
+	arena := newBitmapArena()
+	defer arena.release()
 
 	var scopeBM, versionBM, resourceBM, roleBM, policyKindBM, principalBM *roaring.Bitmap
 
 	// scope is always filtered because "" is a valid literal scope (root scope).
 	bm, ok := bi.scope.Get(scope)
 	if !ok {
-		return nil
+		return buf
 	}
 	scopeBM = bm
 
 	if version != "" {
 		bm, ok := bi.version.Get(version)
 		if !ok {
-			return nil
+			return buf
 		}
 		versionBM = bm
 	}
 	if resource != "" {
-		bm := bi.resource.Query(resource)
+		bm := bi.resource.Query(arena, resource)
 		if bm.IsEmpty() {
-			return nil
+			return buf
 		}
 		resourceBM = bm
 	}
 	if len(roles) > 0 {
-		roleBM = bi.role.QueryMultiple(roles)
+		roleBM = bi.role.QueryMultiple(arena, roles)
 		if roleBM.IsEmpty() {
-			return nil
+			return buf
 		}
 	}
 	if policyKind != 0 {
 		bm, ok := bi.policyKind.Get(policyKind)
 		if !ok {
-			return nil
+			return buf
 		}
 		policyKindBM = bm
 	}
 	if principalID != "" {
 		bm, ok := bi.principal.Get(principalID)
 		if !ok {
-			return nil
+			return buf
 		}
 		principalBM = bm
 	}
@@ -275,30 +278,30 @@ func (m *Index) Query(version, resource, scope, action string, roles []string, p
 		baseBM = bi.universe
 	case 1:
 		baseBM = dims[0]
+	case 2: //nolint:mnd
+		baseBM = arena.and2(dims[0], dims[1])
 	default:
-		baseBM = fastAnd(dims...)
+		baseBM = arena.andInto(dims)
 	}
 	if baseBM.IsEmpty() {
-		return nil
+		return buf
 	}
 
 	// resultBM = AND(baseBM, actionBM) for regular (non-AllowActions) bindings.
 	resultBM := baseBM
 	if action != "" {
-		actionBM := bi.action.Query(action)
+		actionBM := bi.action.Query(arena, action)
 		if !actionBM.IsEmpty() {
-			resultBM = fastAnd(baseBM, actionBM)
+			resultBM = arena.and2(baseBM, actionBM)
 		} else {
-			resultBM = roaring.New()
+			resultBM = emptyBitmap
 		}
 	}
-
-	var res []*Binding
 
 	// Role policy synthetic DENYs are prepended so the evaluator sees them
 	// before regular ALLOWs, which is required for scope permission semantics.
 	if action != "" && policyKind == policyv1.Kind_KIND_RESOURCE && !bi.allowActionsBitmap.IsEmpty() {
-		res = m.queryAllowActions(bi, version, scope, action, resource, roles, versionBM, scopeBM, roleBM, resourceBM, res)
+		buf = m.queryAllowActions(arena, bi, version, scope, action, resource, roles, versionBM, scopeBM, roleBM, resourceBM, buf)
 	}
 
 	// Regular bindings.
@@ -307,16 +310,16 @@ func (m *Index) Query(version, resource, scope, action string, roles []string, p
 		for iter.HasNext() {
 			id := iter.Next()
 			if b := bi.getBinding(id); b != nil {
-				res = append(res, b)
+				buf = append(buf, b)
 			}
 		}
 	}
 
-	return res
+	return buf
 }
 
 // queryAllowActions generates synthetic DENY bindings from role policy AllowActions.
-func (m *Index) queryAllowActions(bi *bitmapIndex, version, scope, action, resource string, roles []string, versionBM, scopeBM, roleBM, resourceBM *roaring.Bitmap, res []*Binding,
+func (m *Index) queryAllowActions(arena *bitmapArena, bi *bitmapIndex, version, scope, action, resource string, roles []string, versionBM, scopeBM, roleBM, resourceBM *roaring.Bitmap, res []*Binding,
 ) []*Binding {
 	// find candidate role policy bindings.
 	// we ignore `resource` because we need to know which roles have ANY role policies,
@@ -338,17 +341,17 @@ func (m *Index) queryAllowActions(bi *bitmapIndex, version, scope, action, resou
 	if len(candidateDims) == 1 {
 		candidateBM = candidateDims[0]
 	} else {
-		candidateBM = fastAnd(candidateDims...)
+		candidateBM = arena.andInto(candidateDims)
 	}
 	if candidateBM.IsEmpty() {
 		return res
 	}
 
 	// now AND with the resource
-	// (fastAnd returns a new copy so candidateBM isn't mutated).
+	// (andInto returns a pooled copy so candidateBM isn't mutated).
 	resourceMatchedBM := candidateBM
 	if resourceBM != nil {
-		resourceMatchedBM = fastAnd(candidateBM, resourceBM)
+		resourceMatchedBM = arena.and2(candidateBM, resourceBM)
 	}
 
 	// we need two levels because we can't determine "does this role have a role policy"
@@ -380,6 +383,7 @@ func (m *Index) queryAllowActions(bi *bitmapIndex, version, scope, action, resou
 	}
 
 	// process each role in input order.
+	var matched []*Binding
 	for _, role := range roles {
 		// no role policies exist for this role, skip it
 		if _, ok := rolesWithPolicy[role]; !ok {
@@ -387,7 +391,7 @@ func (m *Index) queryAllowActions(bi *bitmapIndex, version, scope, action, resou
 		}
 
 		// find resource-matched bindings that cover the queried action.
-		var matched []*Binding
+		matched = matched[:0]
 		for _, ab := range resourceMatchedByRole[role] {
 			for a := range ab.AllowActions {
 				if a == action || util.MatchesGlob(a, action) {
@@ -457,31 +461,34 @@ func (m *Index) QueryMulti(versions, resources, scopes, roles, actions []string)
 		return nil
 	}
 
+	arena := newBitmapArena()
+	defer arena.release()
+
 	dims := make([]*roaring.Bitmap, 0, 4) //nolint:mnd
 
 	if len(versions) > 0 {
-		bm := bi.version.Query(versions)
+		bm := bi.version.Query(arena, versions)
 		if bm.IsEmpty() {
 			return nil
 		}
 		dims = append(dims, bm)
 	}
 	if len(scopes) > 0 {
-		bm := bi.scope.Query(scopes)
+		bm := bi.scope.Query(arena, scopes)
 		if bm.IsEmpty() {
 			return nil
 		}
 		dims = append(dims, bm)
 	}
 	if len(resources) > 0 {
-		bm := bi.resource.QueryMultiple(resources)
+		bm := bi.resource.QueryMultiple(arena, resources)
 		if bm.IsEmpty() {
 			return nil
 		}
 		dims = append(dims, bm)
 	}
 	if len(roles) > 0 {
-		bm := bi.role.QueryMultiple(roles)
+		bm := bi.role.QueryMultiple(arena, roles)
 		if bm.IsEmpty() {
 			return nil
 		}
@@ -495,13 +502,13 @@ func (m *Index) QueryMulti(versions, resources, scopes, roles, actions []string)
 	case 1:
 		baseBM = dims[0]
 	default:
-		baseBM = fastAnd(dims...)
+		baseBM = arena.andInto(dims)
 	}
 	if baseBM.IsEmpty() {
 		return nil
 	}
 
-	resultBM := m.applyActionFilter(baseBM, actions)
+	resultBM := m.applyActionFilter(arena, baseBM, actions)
 
 	if resultBM.IsEmpty() {
 		return nil
@@ -517,7 +524,7 @@ func (m *Index) QueryMulti(versions, resources, scopes, roles, actions []string)
 	return res
 }
 
-func (m *Index) applyActionFilter(baseBM *roaring.Bitmap, actions []string) *roaring.Bitmap {
+func (m *Index) applyActionFilter(arena *bitmapArena, baseBM *roaring.Bitmap, actions []string) *roaring.Bitmap {
 	if len(actions) == 0 {
 		return baseBM
 	}
@@ -525,12 +532,12 @@ func (m *Index) applyActionFilter(baseBM *roaring.Bitmap, actions []string) *roa
 	bi := m.bi
 	parts := make([]*roaring.Bitmap, 0, 2) //nolint:mnd
 
-	actionBM := bi.action.QueryMultiple(actions)
+	actionBM := bi.action.QueryMultiple(arena, actions)
 	if !actionBM.IsEmpty() {
-		parts = append(parts, fastAnd(baseBM, actionBM))
+		parts = append(parts, arena.and2(baseBM, actionBM))
 	}
 	if !bi.allowActionsBitmap.IsEmpty() {
-		aaBM := fastAnd(baseBM, bi.allowActionsBitmap)
+		aaBM := arena.and2(baseBM, bi.allowActionsBitmap)
 		if !aaBM.IsEmpty() {
 			parts = append(parts, aaBM)
 		}
@@ -538,11 +545,11 @@ func (m *Index) applyActionFilter(baseBM *roaring.Bitmap, actions []string) *roa
 
 	switch len(parts) {
 	case 0:
-		return roaring.New()
+		return emptyBitmap
 	case 1:
 		return parts[0]
 	default:
-		return roaring.FastOr(parts...)
+		return arena.orInto(parts)
 	}
 }
 
@@ -682,12 +689,15 @@ func (m *Index) ScopedResourceExists(version, resource string, scopes []string) 
 		return false, nil
 	}
 
-	scopeBM := m.bi.scope.Query(scopes)
+	arena := newBitmapArena()
+	defer arena.release()
+
+	scopeBM := m.bi.scope.Query(arena, scopes)
 	if scopeBM.IsEmpty() {
 		return false, nil
 	}
 
-	resourceBM := m.bi.resource.Query(resource)
+	resourceBM := m.bi.resource.Query(arena, resource)
 	if resourceBM.IsEmpty() {
 		return false, nil
 	}
@@ -710,7 +720,10 @@ func (m *Index) ScopedPrincipalExists(version string, scopes []string) (bool, er
 		return false, nil
 	}
 
-	scopeBM := m.bi.scope.Query(scopes)
+	arena := newBitmapArena()
+	defer arena.release()
+
+	scopeBM := m.bi.scope.Query(arena, scopes)
 	if scopeBM.IsEmpty() {
 		return false, nil
 	}
@@ -765,32 +778,6 @@ func getCelProgramsFromExpressions(vars []*runtimev1.Variable) ([]*CelProgram, e
 	}
 
 	return progs, nil
-}
-
-// fastAnd swaps the smallest bitmap to position 0 before calling
-// roaring.FastAnd, which processes left-to-right. A full sort would be
-// theoretically optimal (the merge-join scans both sides), but at our
-// slice sizes (<=6) the sort overhead seems to cost more than it saves.
-func fastAnd(bitmaps ...*roaring.Bitmap) *roaring.Bitmap {
-	minIdx := 0
-	minCard := bitmaps[0].GetCardinality()
-	for i := 1; i < len(bitmaps); i++ {
-		if c := bitmaps[i].GetCardinality(); c < minCard {
-			minCard = c
-			minIdx = i
-		}
-	}
-	if minIdx != 0 {
-		bitmaps[0], bitmaps[minIdx] = bitmaps[minIdx], bitmaps[0]
-	}
-	res := roaring.FastAnd(bitmaps...)
-
-	// ensure the passed bitmaps preserve their original ordering by swopping back if changed
-	if minIdx != 0 {
-		bitmaps[0], bitmaps[minIdx] = bitmaps[minIdx], bitmaps[0]
-	}
-
-	return res
 }
 
 // intersectionNonEmpty returns true if the intersection of all bitmaps is

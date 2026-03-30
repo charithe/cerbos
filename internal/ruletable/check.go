@@ -226,6 +226,7 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 
 				parentRoles := rt.idx.AddParentRoles([]string{resourceScope}, []string{role})
 
+				var bindings []*index.Binding
 			scopesLoop:
 				for _, scope := range scopes {
 					sctx := actx.StartScope(scope)
@@ -285,7 +286,7 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 					if pt == policyv1.Kind_KIND_PRINCIPAL {
 						pid = input.Principal.Id
 					}
-					bindings := rt.idx.Query(resourceVersion, sanitizedResource, scope, action, parentRoles, pt, pid)
+					bindings = rt.idx.Query(resourceVersion, sanitizedResource, scope, action, parentRoles, pt, pid, bindings[:0])
 					for _, b := range bindings {
 						rulectx := sctx.StartRule(b.Name)
 
