@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"github.com/cespare/xxhash/v2"
-	"go.uber.org/zap"
 
 	effectv1 "github.com/cerbos/cerbos/api/genpb/cerbos/effect/v1"
 	policyv1 "github.com/cerbos/cerbos/api/genpb/cerbos/policy/v1"
@@ -179,10 +178,6 @@ func (m *Index) IndexRules(rules []*runtimev1.RuleTable_RuleRow) error {
 		}
 
 		m.bi.addBinding(b)
-	}
-
-	if log := zap.L().Named("index"); log.Core().Enabled(zap.DebugLevel) {
-		m.bi.logStats(log.Sugar())
 	}
 
 	return nil
