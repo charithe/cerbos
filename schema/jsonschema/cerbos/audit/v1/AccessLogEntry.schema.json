@@ -117,6 +117,9 @@
         "branch": {
           "type": "string"
         },
+        "hash": {
+          "type": "string"
+        },
         "repositoryUrl": {
           "type": "string"
         },
@@ -143,6 +146,9 @@
         },
         "playgroundId": {
           "type": "string"
+        },
+        "remoteBundle": {
+          "$ref": "#/definitions/cerbos.audit.v1.PolicySource.Hub.RemoteBundle"
         }
       }
     },
@@ -165,7 +171,22 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "bundleId": {
+          "type": "string"
+        },
         "path": {
+          "type": "string"
+        }
+      }
+    },
+    "cerbos.audit.v1.PolicySource.Hub.RemoteBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bundleId": {
+          "type": "string"
+        },
+        "deploymentId": {
           "type": "string"
         }
       }

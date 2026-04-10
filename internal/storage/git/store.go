@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v6"
@@ -61,7 +62,9 @@ type Store struct {
 	repo *git.Repository
 	sf   singleflight.Group
 	*storage.SubscriptionManager
-	subDir string
+	subDir         string
+	currCommitHash string
+	mu             sync.RWMutex
 }
 
 func NewStore(ctx context.Context, conf *Conf) (*Store, error) {
@@ -85,6 +88,7 @@ func (s *Store) init(ctx context.Context) error {
 	if s.conf.ScratchDir != "" {
 		s.log.Warnf("ScratchDir storage option is deprecated and will be removed in a future release")
 	}
+
 	finfo, err := os.Stat(s.conf.CheckoutDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to stat %s: %w", s.conf.CheckoutDir, err)
@@ -134,6 +138,8 @@ func (s *Store) init(ctx context.Context) error {
 	if _, err := s.pullAndCompare(ctx); err != nil {
 		return err
 	}
+
+	s.setCurrentCommitHash()
 
 	return loadAndStartPoller()
 }
@@ -200,6 +206,8 @@ func (s *Store) Reload(ctx context.Context) error {
 		return fmt.Errorf("failed to pull: %w", err)
 	}
 
+	s.setCurrentCommitHash()
+
 	evts, err := s.idx.Reload(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to reload index: %w", err)
@@ -218,9 +226,34 @@ func (s *Store) Source() *auditv1.PolicySource {
 				RepositoryUrl: s.conf.URL,
 				Branch:        s.conf.getBranch(),
 				Subdirectory:  s.conf.getSubDir(),
+				Hash:          s.currentCommitHash(),
 			},
 		},
 	}
+}
+
+func (s *Store) currentCommitHash() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.currCommitHash
+}
+
+func (s *Store) setCurrentCommitHash() {
+	if s.repo == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	head, err := s.repo.Head()
+	if err != nil {
+		s.currCommitHash = "UNKNOWN"
+		return
+	}
+
+	s.currCommitHash = head.Hash().String()
 }
 
 func isEmptyDir(dir string) (bool, error) {
@@ -436,6 +469,8 @@ func (s *Store) updateIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	s.setCurrentCommitHash()
 
 	if changes == nil {
 		s.log.Debug("No new commits")
