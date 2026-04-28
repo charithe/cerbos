@@ -34,8 +34,8 @@ cloud.google.com/go/storage v1.57.2 h1:sVlym3cHGYhrp6XZKkKb+92I1V42ks2qKKpB0CF5M
 cloud.google.com/go/storage v1.57.2/go.mod h1:n5ijg4yiRXXpCu0sJTD6k+eMf7GRrJmPyr9YxLXGHOk=
 cloud.google.com/go/trace v1.11.7 h1:kDNDX8JkaAG3R2nq1lIdkb7FCSi1rCmsEtKVsty7p+U=
 cloud.google.com/go/trace v1.11.7/go.mod h1:TNn9d5V3fQVf6s4SCveVMIBS2LJUqo73GACmq/Tky0s=
-connectrpc.com/connect v1.19.1 h1:R5M57z05+90EfEvCY1b7hBxDVOUl45PrtXtAV2fOC14=
-connectrpc.com/connect v1.19.1/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
+connectrpc.com/connect v1.19.2 h1:McQ83FGdzL+t60peksi0gXC7MQ/iLKgLduAnThbM0mo=
+connectrpc.com/connect v1.19.2/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
 connectrpc.com/grpcreflect v1.3.0 h1:Y4V+ACf8/vOb1XOc251Qun7jMB75gCUNw6llvB9csXc=
 connectrpc.com/grpcreflect v1.3.0/go.mod h1:nfloOtCS8VUQOQ1+GTdFzVg2CJo4ZGaat8JIovCtDYs=
 connectrpc.com/otelconnect v0.9.0 h1:NggB3pzRC3pukQWaYbRHJulxuXvmCKCKkQ9hbrHAWoA=
@@ -164,8 +164,8 @@ github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1x
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/cerbos/cerbos-sdk-go v0.3.18 h1:Ph96QeQj6ivAeog7jVvOzl1+JynPTK57Vz+O3LckvS0=
 github.com/cerbos/cerbos-sdk-go v0.3.18/go.mod h1:OuXQ9qmLWx4Dm2ztsbQZBYral+oCAVnML8iDgmLA0IY=
-github.com/cerbos/cerbos/api/genpb v0.51.1-0.20260427070745-ebe00a5b24e5 h1:JhiNmTwWY2qTax2P3h/l2qMYeivoFiQYBmgHWOKNVu8=
-github.com/cerbos/cerbos/api/genpb v0.51.1-0.20260427070745-ebe00a5b24e5/go.mod h1:dmCIvBLI65zr1VRJsXZFQaPagyZ5/5/cSizGIglc3+k=
+github.com/cerbos/cerbos/api/genpb v0.51.1-0.20260428055913-2812325c18db h1:2CevJ7GKLHje/DNegvhlNdmgTLFyQmbPfv+nOomnG5s=
+github.com/cerbos/cerbos/api/genpb v0.51.1-0.20260428055913-2812325c18db/go.mod h1:l84RSVWM1rrBptX+ek8yRz2csD2XjaOFFVi32arHSJc=
 github.com/cerbos/cloud-api v0.1.72 h1:c3ce8Dt9RUnQ4KTFto8BduTRoqfKL/1QG/TrKouAqo8=
 github.com/cerbos/cloud-api v0.1.72/go.mod h1:BJflKce8w3oGaHlbnE1Q6GppUPwdGwljt4jtfGzkW/g=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

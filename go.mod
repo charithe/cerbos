@@ -22,7 +22,7 @@ require (
 	github.com/bluele/gcache v0.0.2
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cerbos/cerbos-sdk-go v0.3.18
-	github.com/cerbos/cerbos/api/genpb v0.51.1-0.20260427070745-ebe00a5b24e5
+	github.com/cerbos/cerbos/api/genpb v0.51.1-0.20260428055913-2812325c18db
 	github.com/cerbos/cloud-api v0.1.72
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cloudflare/certinel v0.4.1
@@ -134,7 +134,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	cloud.google.com/go/monitoring v1.24.3 // indirect
 	cloud.google.com/go/storage v1.57.2 // indirect
-	connectrpc.com/connect v1.19.1 // indirect
+	connectrpc.com/connect v1.19.2 // indirect
 	connectrpc.com/otelconnect v0.9.0 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	filippo.io/age v1.3.1 // indirect
