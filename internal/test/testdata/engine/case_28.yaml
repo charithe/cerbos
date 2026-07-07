@@ -68,6 +68,30 @@ wantOutputs:
             "action": "create",
           },
         ],
+      "evaluationErrors":
+        [
+          {
+            "celError":
+              {
+                "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                "message": "no such key: ip_address",
+              },
+          },
+          {
+            "celError":
+              {
+                "expression": "P.attr.city == constants.home_city",
+                "message": "no such key: city",
+              },
+          },
+          {
+            "celError":
+              {
+                "expression": "V.principal_in_home_city",
+                "message": "undefined field 'principal_in_home_city'",
+              },
+          },
+        ],
     },
   ]
 wantDecisionLogs:
@@ -138,6 +162,30 @@ wantDecisionLogs:
                       "src": "role.acme_london_employee.vdefault/acme.hr.uk.london#city_check",
                       "val": "john_not_in_london",
                       "action": "create",
+                    },
+                  ],
+                "evaluationErrors":
+                  [
+                    {
+                      "celError":
+                        {
+                          "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                          "message": "no such key: ip_address",
+                        },
+                    },
+                    {
+                      "celError":
+                        {
+                          "expression": "P.attr.city == constants.home_city",
+                          "message": "no such key: city",
+                        },
+                    },
+                    {
+                      "celError":
+                        {
+                          "expression": "V.principal_in_home_city",
+                          "message": "undefined field 'principal_in_home_city'",
+                        },
                     },
                   ],
               },

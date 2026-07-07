@@ -82,6 +82,23 @@ wantOutputs:
             },
         },
       "effectiveDerivedRoles": ["any_employee"],
+      "evaluationErrors":
+        [
+          {
+            "celError":
+              {
+                "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                "message": "no such key: ip_address",
+              },
+          },
+          {
+            "celError":
+              {
+                "expression": "request.principal.attr.reader == true",
+                "message": "no such key: reader",
+              },
+          },
+        ],
     },
     {
       "requestId": "test2",
@@ -95,6 +112,23 @@ wantOutputs:
             },
         },
       "effectiveDerivedRoles": ["any_employee"],
+      "evaluationErrors":
+        [
+          {
+            "celError":
+              {
+                "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                "message": "no such key: ip_address",
+              },
+          },
+          {
+            "celError":
+              {
+                "expression": "request.principal.attr.reader == true",
+                "message": "no such key: reader",
+              },
+          },
+        ],
     },
   ]
 wantDecisionLogs:
@@ -185,6 +219,23 @@ wantDecisionLogs:
                       },
                   },
                 "effectiveDerivedRoles": ["any_employee"],
+                "evaluationErrors":
+                  [
+                    {
+                      "celError":
+                        {
+                          "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                          "message": "no such key: ip_address",
+                        },
+                    },
+                    {
+                      "celError":
+                        {
+                          "expression": "request.principal.attr.reader == true",
+                          "message": "no such key: reader",
+                        },
+                    },
+                  ],
               },
               {
                 "requestId": "test2",
@@ -198,6 +249,23 @@ wantDecisionLogs:
                       },
                   },
                 "effectiveDerivedRoles": ["any_employee"],
+                "evaluationErrors":
+                  [
+                    {
+                      "celError":
+                        {
+                          "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                          "message": "no such key: ip_address",
+                        },
+                    },
+                    {
+                      "celError":
+                        {
+                          "expression": "request.principal.attr.reader == true",
+                          "message": "no such key: reader",
+                        },
+                    },
+                  ],
               },
             ],
         },

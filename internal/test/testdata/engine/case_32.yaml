@@ -34,7 +34,17 @@ wantOutputs:
               "policy": "resource.leave_request.vdefault/acme.hr.uk.bristol",
               "scope": "acme.hr.uk"
             }
-        }
+        },
+      "evaluationErrors":
+        [
+          {
+            "celError":
+              {
+                "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                "message": "no such key: ip_address",
+              },
+          },
+        ],
     },
   ]
 wantDecisionLogs:
@@ -77,7 +87,17 @@ wantDecisionLogs:
                       "policy": "resource.leave_request.vdefault/acme.hr.uk.bristol",
                       "scope": "acme.hr.uk"
                     }
-                  }
+                  },
+                "evaluationErrors":
+                  [
+                    {
+                      "celError":
+                        {
+                          "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                          "message": "no such key: ip_address",
+                        },
+                    },
+                  ],
               },
             ],
         },

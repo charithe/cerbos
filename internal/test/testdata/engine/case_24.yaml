@@ -63,7 +63,24 @@ wantOutputs:
               "scope": "acme",
             },
         },
-      "effectiveDerivedRoles": ["any_employee"]
+      "effectiveDerivedRoles": ["any_employee"],
+      "evaluationErrors":
+        [
+          {
+            "celError":
+              {
+                "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                "message": "no such key: ip_address",
+              },
+          },
+          {
+            "celError":
+              {
+                "expression": "R.attr.owner == P.id",
+                "message": "no such key: owner",
+              },
+          },
+        ],
     },
   ]
 wantDecisionLogs:
@@ -129,7 +146,24 @@ wantDecisionLogs:
                         "scope": "acme",
                       },
                   },
-                "effectiveDerivedRoles": ["any_employee"]
+                "effectiveDerivedRoles": ["any_employee"],
+                "evaluationErrors":
+                  [
+                    {
+                      "celError":
+                        {
+                          "expression": '(P.attr.ip_address.inIPAddrRange("10.20.0.0/16") ? "GB" : "")',
+                          "message": "no such key: ip_address",
+                        },
+                    },
+                    {
+                      "celError":
+                        {
+                          "expression": "R.attr.owner == P.id",
+                          "message": "no such key: owner",
+                        },
+                    },
+                  ],
               },
             ],
         },

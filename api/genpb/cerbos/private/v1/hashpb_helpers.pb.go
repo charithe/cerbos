@@ -890,6 +890,39 @@ func cerbos_engine_v1_CheckOutput_hashpb_sum(m *v12.CheckOutput, hasher hash.Has
 			}
 		}
 	}
+	if _, ok := ignore["cerbos.engine.v1.CheckOutput.evaluation_errors"]; !ok {
+		if len(m.EvaluationErrors) > 0 {
+			for _, v := range m.EvaluationErrors {
+				if v != nil {
+					cerbos_engine_v1_EvaluationError_hashpb_sum(v, hasher, ignore, b)
+				}
+			}
+		}
+	}
+}
+
+func cerbos_engine_v1_EvaluationError_CELError_hashpb_sum(m *v12.EvaluationError_CELError, hasher hash.Hash, ignore map[string]struct{}, b *[10]byte) {
+	if _, ok := ignore["cerbos.engine.v1.EvaluationError.CELError.expression"]; !ok {
+		_, _ = hasher.Write(protowire.AppendVarint(b[:0], uint64(len(m.GetExpression()))))
+		_, _ = hasher.Write(unsafe.Slice(unsafe.StringData(m.GetExpression()), len(m.GetExpression())))
+	}
+	if _, ok := ignore["cerbos.engine.v1.EvaluationError.CELError.message"]; !ok {
+		_, _ = hasher.Write(protowire.AppendVarint(b[:0], uint64(len(m.GetMessage()))))
+		_, _ = hasher.Write(unsafe.Slice(unsafe.StringData(m.GetMessage()), len(m.GetMessage())))
+	}
+}
+
+func cerbos_engine_v1_EvaluationError_hashpb_sum(m *v12.EvaluationError, hasher hash.Hash, ignore map[string]struct{}, b *[10]byte) {
+	if m.Error != nil {
+		if _, ok := ignore["cerbos.engine.v1.EvaluationError.error"]; !ok {
+			switch t := m.Error.(type) {
+			case *v12.EvaluationError_CelError:
+				if t.CelError != nil {
+					cerbos_engine_v1_EvaluationError_CELError_hashpb_sum(t.CelError, hasher, ignore, b)
+				}
+			}
+		}
+	}
 }
 
 func cerbos_engine_v1_OutputEntry_hashpb_sum(m *v12.OutputEntry, hasher hash.Hash, ignore map[string]struct{}, b *[10]byte) {
@@ -1106,6 +1139,15 @@ func cerbos_engine_v1_PlanResourcesOutput_hashpb_sum(m *v12.PlanResourcesOutput,
 					_, _ = hasher.Write(unsafe.Slice(unsafe.StringData(k), len(k)))
 					_, _ = hasher.Write(protowire.AppendVarint(b[:0], uint64(len(m.MatchedScopes[k]))))
 					_, _ = hasher.Write(unsafe.Slice(unsafe.StringData(m.MatchedScopes[k]), len(m.MatchedScopes[k])))
+				}
+			}
+		}
+	}
+	if _, ok := ignore["cerbos.engine.v1.PlanResourcesOutput.evaluation_errors"]; !ok {
+		if len(m.EvaluationErrors) > 0 {
+			for _, v := range m.EvaluationErrors {
+				if v != nil {
+					cerbos_engine_v1_EvaluationError_hashpb_sum(v, hasher, ignore, b)
 				}
 			}
 		}
