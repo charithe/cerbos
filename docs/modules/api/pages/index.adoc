@@ -5,7 +5,7 @@ include::ROOT:partial$attributes.adoc[]
 include::ROOT:partial$version-check.adoc[]
 
 
-The main API endpoint for making policy decisions is the xref:#check-resources[`/api/check/resources` REST endpoint] (`cerbos.svc.v1.CerbosService/CheckResources` RPC in the gRPC API). You can browse a xref:attachment$cerbos-api.html[static version of the Cerbos OpenAPI specification on this site,window=_blank]. To interactively explore the API, launch a Cerbos instance and access the root directory of the HTTP endpoint using a browser.
+The main API endpoint for making policy decisions is the xref:#check-resources[`/api/check/resources` REST endpoint] (`cerbos.svc.v1.CerbosService/CheckResources` RPC in the gRPC API). You can browse a xref:attachment$cerbos-api.html[static version of the Cerbos OpenAPI specification on this site,window=_blank]. To interactively explore the API, launch a Cerbos PDP instance and access the root directory of the HTTP endpoint using a browser.
 
 
 [source,sh,subs="attributes"]
@@ -431,7 +431,7 @@ See xref:recipes:query-plan-adapters/index.adoc[Query plan adapters] for install
 [#server-info]
 === `ServerInfo` (`/api/server_info`)
 
-Returns Cerbos server version.
+Returns Cerbos PDP server version.
 
 .Response
 [source,json,linenums]
@@ -446,7 +446,7 @@ Returns Cerbos server version.
 [#authzen]
 == Request and response formats (AuthZEN Authorization API)
 
-Cerbos partially implements the link:https://openid.github.io/authzen/[OpenID AuthZEN Authorization API specification], providing a standardized way to make authorization decisions. The AuthZEN API uses a simplified entity model that maps to Cerbos's native authorization model.
+Cerbos PDP partially implements the link:https://openid.github.io/authzen/[OpenID AuthZEN Authorization API specification], providing a standardized way to make authorization decisions. The AuthZEN API uses a simplified entity model that maps to Cerbos PDP's native authorization model.
 
 [#authzen-entity-model]
 === AuthZEN entity model mapping
@@ -459,7 +459,7 @@ The AuthZEN specification uses a simplified entity model with three core entitie
 
 ==== Mapping AuthZEN to Cerbos
 
-AuthZEN entities are mapped to Cerbos CheckResources requests as follows:
+AuthZEN entities are mapped to Cerbos PDP CheckResources requests as follows:
 
 **Subject → Principal**
 
@@ -557,7 +557,7 @@ AuthZEN entities are mapped to Cerbos CheckResources requests as follows:
 [#authzen-metadata]
 === `Metadata` (`/.well-known/authzen-configuration`)
 
-Returns metadata about the Cerbos Policy Decision Point, including endpoint URLs for accessing the AuthZEN APIs.
+Returns metadata about the Cerbos PDP, including endpoint URLs for accessing the AuthZEN APIs.
 
 .Request
 
@@ -844,7 +844,7 @@ Evaluates multiple access requests in a single call. This endpoint supports defa
 ----
 <1> Array of evaluation responses, in the same order as the request
 <2> Boolean decision for this evaluation
-<3> Full Cerbos CheckResources response for this evaluation (included when `cerbos.includeMeta` is `true`)
+<3> Full Cerbos PDP CheckResources response for this evaluation (included when `cerbos.includeMeta` is `true`)
 
 
 == Accessing the API
@@ -1035,7 +1035,7 @@ EOF
 
 == Generating API clients
 
-The Cerbos OpenAPI specification can be obtained from a running Cerbos instance by accessing link:http://localhost:3592{cerbos-openapi-schema}[]. Cerbos gRPC API definitions are published to the link:https://buf.build/cerbos/cerbos-api[Buf schema registry (BSR)] and can be easily added to your project if you use the link:https://docs.buf.build[Buf build system for protobufs].
+The Cerbos OpenAPI specification can be obtained from a running Cerbos PDP instance by accessing link:http://localhost:3592{cerbos-openapi-schema}[]. Cerbos gRPC API definitions are published to the link:https://buf.build/cerbos/cerbos-api[Buf schema registry (BSR)] and can be easily added to your project if you use the link:https://docs.buf.build[Buf build system for protobufs].
 
 === REST
 

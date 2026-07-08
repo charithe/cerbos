@@ -479,3 +479,8 @@ dagger -m github.com/cerbos/dagger-cerbos call server --config=storage.driver=sq
 dagger -m github.com/cerbos/dagger-cerbos call compile --help
 dagger -m github.com/cerbos/dagger-cerbos call server --help
 ----
+
+[TIP]
+====
+https://docs.cerbos.dev/cerbos-hub/[Cerbos Hub] provides private, browser-based, collaborative playgrounds for authoring and testing policies with advanced features like execution traces for debugging condition logic. 
+====

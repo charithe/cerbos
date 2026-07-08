@@ -1,6 +1,6 @@
 ---
 site:
-  title: Cerbos // Documentation
+  title: Cerbos Authorization Management Platform // Documentation
   url: https://docs.cerbos.dev
   start_page: cerbos:ROOT:index.adoc
   robots: allow

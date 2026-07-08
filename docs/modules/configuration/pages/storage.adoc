@@ -391,3 +391,8 @@ storage:
     dsn: "file:/tmp/cerbos.sqlite?mode=rwc&cache=shared&_fk=true"
 ----
 
+
+[TIP]
+====
+https://docs.cerbos.dev/cerbos-hub/[Cerbos Hub] automates policy change detection, testing and secure distribution to connected PDPs.
+====

@@ -4,6 +4,8 @@ include::ROOT:partial$attributes.adoc[]
 
 include::ROOT:partial$version-check.adoc[]
 
+[.lead]
+Conditions are CEL expressions evaluated at request time against principal, resource, and request attributes. A rule with a condition applies only when the expression evaluates to true.
 
 A powerful feature of Cerbos policies is the ability to define conditions that are evaluated against the data provided in the request. Conditions are written using the link:https://github.com/google/cel-spec/blob/master/doc/intro.md[Common Expression Language (CEL)].
 
@@ -576,3 +578,8 @@ timestamp(R.attr.lastUpdateTime) - timestamp(R.attr.lastAccessed) > duration("36
 ----
 timestamp(R.attr.lastUpdateTime) + duration("24h") == timestamp("2021-05-02T13:34:12.024Z")
 ----
+
+[TIP]
+====
+For patterns that translate condition logic into database queries, see https://www.cerbos.dev/blog/filtering-database-results-with-cerbos-query-plans[Filtering database results with Cerbos query plans]. For implementation review, https://www.cerbos.dev/workshop?utm_campaign=brand_cerbos&utm_source=documentation&utm_medium=text[speak to us].
+====

@@ -570,3 +570,8 @@ cerbosctl \
   put policies -R \
   policy_dir
 ----
+
+[TIP]
+====
+https://docs.cerbos.dev/cerbos-hub/[Cerbos Hub] securely distributes policy bundles to connected PDPs, eliminating per-instance polling and reload logic.
+====
